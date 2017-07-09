@@ -4,6 +4,10 @@
   "description": "Rest api for Afina SQL",
   "main": "index.js",
   "author": "igor-go",
+  "repository": {
+    "url": "https://github.com/igorgo/afina-rest-api.git",
+    "type": "git"
+  },
   "license": "MIT",
   "dependencies": {
     "body-parser": "^1.17.2",
