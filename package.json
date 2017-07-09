@@ -1,0 +1,16 @@
+{
+  "name": "afina-rest-api",
+  "version": "1.0.0",
+  "description": "Rest api for Afina SQL",
+  "main": "index.js",
+  "author": "igor-go",
+  "license": "MIT",
+  "dependencies": {
+    "body-parser": "^1.17.2",
+    "connect-sqlite3": "^0.9.9",
+    "cookie-parser": "^1.4.3",
+    "express": "^4.15.3",
+    "express-session": "^1.15.3",
+    "morgan": "^1.8.2"
+  }
+}
