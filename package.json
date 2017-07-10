@@ -1,6 +1,6 @@
 {
   "name": "afina-rest-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Rest api for Afina SQL",
   "main": "index.js",
   "author": "igor-go",
@@ -16,5 +16,6 @@
     "express": "^4.15.3",
     "express-session": "^1.15.3",
     "morgan": "^1.8.2"
-  }
+  },
+  "files": ["index.js"]
 }
