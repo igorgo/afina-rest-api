@@ -13,8 +13,8 @@ let server = new Server({
     "static": path.join(__dirname, 'dist'),
     "db": require('oracledb'),
     // anonymous user
-    "user": 'PARUSWEB',
-    "password": "parusweb",
+    "user": '*******',
+    "password": "*****",
     "connectString": "P852ONE",
     "schema": "VMF",
     "release": 8,
