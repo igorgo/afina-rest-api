@@ -1,285 +1,192 @@
-/**
+/*
+ * Afina Sequel Api Server
  * Created by igorgo on 08.07.2017.
  */
-const
-    express = require('express'),
-    logger = require('morgan'),
-    bodyParser = require('body-parser'),
-    cookieParser = require('cookie-parser'),
-    fs = require('fs'),
-    rfs = require('rotating-file-stream'),
-    http = require('http'),
-    tokenHeader = 'x-afs-token'
+const express = require('express')
+const logger = require('morgan')
+const bodyParser = require('body-parser')
+const cookieParser = require('cookie-parser')
+const fs = require('fs')
+const http = require('http')
+const rfs = require('rotating-file-stream')
+const sessionIdHeader = 'x-afs-session-id'
 
 /**
- * Creates Afina SQL api server
- * @param {Object} config
- * @param {number} config.port Server's port.
- * @param {string} config.log directory to log requests
- * @param {Object<oracledb.Oracledb>} config.db oracledb object.
- * @param {string} config.user The database user name.
- * @param {string} config.password The password of the database user.
- * @param {string} config.connectString The Oracle database instance to connect to. </br>The string can be an Easy Connect string, or a Net Service Name from a tnsnames.ora file, or the name of a local Oracle database instance.
- * @param {string} config.schema The AfinaSQL schema.
- * @param {number} config.release The AfinaSQL release number.
- * @param {string} config.application The Afina SQL application code.
- * @param {string} config.company The AfinaSQL company.
- * @param {string} config.language The AfinaSQL language.
- *
+ * Afina Sequel Api Server
  */
 class AfinaApiServer {
-    constructor(config) {
-        this.config = config
-        this.express = express()
-        this.express.use(bodyParser.json())
-        this.express.use(bodyParser.urlencoded({extended: false}))
-        this.express.use(cookieParser())
+    /**
+     * Creates An Afina Sequel Api Server instance
+     * @param {object} [options] The config options of the server
+     * @param {number} [options.listenPort=3000] The port to listen by the server
+     * @param {string} [options.logDest] The path to save the log files
+     * @param {string} [options.apiRoot='/api'] The root api path in the URL
+     * @param {string} [options.staticDest] The path to the static content, if you want to display it at '/' URL
+     */
+    constructor(options) {
+        this._status = 'off'
+        this._log = options.logDest || ''
+        this._port = options.listenPort || 3000
+        this._api = options.apiRoot || '/api'
+        this._static = options.staticDest || ''
+        this._express = express()
+        this._apiRouter = express.Router()
+        this._express.use(bodyParser.json())
+        this._express.use(bodyParser.urlencoded({extended: false}))
+        this._express.use(cookieParser())
         // allow cross origin requests
-        this.express.use((req, res, next) => {
+        this._express.use((req, res, next) => {
             res.header('Access-Control-Allow-Origin', '*')
             res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
             res.header('Access-Control-Allow-Headers', 'Content-Type')
             next()
         })
-        // set logger
-        if (this.config.hasOwnProperty("log") && this.config.log) {
-            fs.existsSync(this.config.log) || fs.mkdirSync(this.config.log)
-            // create a rotating write stream
-            const accessLogStream = rfs('access.log', {
-                interval: '1d', // rotate daily
-                path: this.config.log
-            })
-            this.express.use(logger(
-                `:req[${tokenHeader}] :res[${tokenHeader}] :date :method :url :status :res[content-length] - :response-time ms`,
-                {stream: accessLogStream}
-            ))
-        }
-        this._apiRouter = express.Router()
-        this.express.use('/api', this._apiRouter)
-        // set static content
-        if (this.config.hasOwnProperty("static") && this.config.static) {
-            this.express.use(express.static(this.config.static))
-            this.express.use('/', (req, res) => {res.redirect('index.html')})
-        }
+    }
+    /**
+     * Starts listening the port
+     * @returns {Promise<void>} Promise
+     * @private
+     */
+    async _listen() {
+        return new Promise((resolve) => {
+            this._server.listen(this._port, resolve)
+        })
     }
 
     /**
      * Starts the server
-     * @returns {Promise.<void>}
+     * @returns {Promise.<AfinaApiServer>} The server instance
      */
     async start() {
-        this.config.port = AfinaApiServer.normalizePort(this.config.port || '3000')
-        this.express.set('port', this.config.port)
-        this._apiRouter.post('/login', this._login.bind(this))
-        this._apiRouter.post('/logoff', this._logoff.bind(this))
-        this.express.use(function (err, req, res) {
-            console.log(err.message);
+        // set logger
+        if (this._log) {
+            fs.existsSync(this._log) || fs.mkdirSync(this._log)
+            // create a rotating write stream
+            const accessLogStream = rfs('access.log', {
+                interval: '1d', // rotate daily
+                path: this._log
+            })
+            this._express.use(logger(
+                `:req[${sessionIdHeader}] :res[${sessionIdHeader}] :date :method :url :status :res[content-length] - :response-time ms`,
+                {stream: accessLogStream}
+            ))
+        }
+        this._express.set('port', this._port)
+        this._express.use(this._api, this._apiRouter)
+        this._express.use(function (err, req, res) {
+            // eslint-disable-next-line no-console
+            console.log(err.message)
             if (err.message.startsWith('ORA-20103: Дальнейшая работа в Системе невозможна')) {
-                res.sendStatus(401);
+                res.sendStatus(401)
             } else {
-                res.locals.message = err.message;
-                res.locals.error = req.app.get('env') === 'development' ? err : {};
-                res.status(err.status || 500);
-                res.send(err.message);
+                res.locals.message = err.message
+                res.locals.error = req.app.get('env') === 'development' ? err : {}
+                res.status(err.status || 500)
+                res.send(err.message)
             }
-        });
-
-        this.db = this.config.db
-        this.db.outFormat = this.db.OBJECT
-        this.pool = await this._createPool()
-
-        this.server = http.createServer(this.express)
-        this.server.listen(this.config.port)
-        this.server.on('error', error => {
+        })
+        // set static content
+        if (this._static) {
+            this._express.use(express.static(this._static))
+            this._express.use('/', (req, res) => {
+                res.redirect('index.html')
+            })
+        }
+        this._server = http.createServer(this._express)
+        this._server.on('error', error => {
             if (error.syscall !== 'listen') {
-                throw error;
+                throw error
             }
-            const bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port
+            const bind = typeof this._port === 'string' ? 'Pipe ' + this._port : 'Port ' + this._port
             // handle specific listen errors with friendly messages
             switch (error.code) {
-                case 'EACCES':
-                    console.error(bind + ' requires elevated privileges');
-                    throw error;
-                    break;
-                case 'EADDRINUSE':
-                    console.error(bind + ' is already in use');
-                    throw error;
-                    break;
-                default:
-                    throw error;
+            case 'EACCES':
+                // eslint-disable-next-line no-console
+                console.error(bind + ' requires elevated privileges')
+                throw error
+            case 'EADDRINUSE':
+                // eslint-disable-next-line no-console
+                console.error(bind + ' is already in use')
+                throw error
+            default:
+                throw error
             }
-        });
-        this.server.on('listening', () => {
-            const addr = this.server.address()
-            const bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port
-            console.log('Listening on ' + bind);
         })
-
-        process.stdin.resume();//so the program will not close instantly
+        this._server.on('listening', () => {
+            this._status = 'on'
+        })
+        process.stdin.resume() //so the program will not close instantly
         //catches closing app
-        process.on('exit', this._exitHandler.bind(this, {cleanup: true}));
+        process.on('exit', await this._exitHandler.bind(this, {cleanup: true}))
         //catches ctrl+c event
-        process.on('SIGINT', this._exitHandler.bind(this, {exit: true, cleanup: true}));
+        process.on('SIGINT', await this._exitHandler.bind(this, {exit: true, cleanup: true}))
         //catches uncaught exceptions
-        process.on('uncaughtException', this._exitHandler.bind(this, {exit: true, cleanup: true}))
+        process.on('uncaughtException',await   this._exitHandler.bind(this, {exit: true, cleanup: true}))
+        await this._listen()
+        return this
+    }
+
+    /**
+     * Stops the server
+     * @returns {Promise.<AfinaApiServer>} The server instance
+     */
+    async stop() {
+        return new Promise(resolve => {
+            if (this._status === 'on') {
+                this._server.close(() => {
+                    this._status = 'off'
+                    resolve(this)
+                })
+            }
+            else resolve(this)
+        })
     }
 
     /**
      * Exit routine
-     * @param options
-     * @param err
-     * @returns {Promise.<void>}
+     * @param {object} options exit option
+     * @param {error} err error
+     * @returns {Promise.<void>} nothing
      * @private
      */
     async _exitHandler(options, err) {
         if (options.cleanup) {
-            await this.pool.close()
-            console.log('Oracle connection pool terminated')
+            await this.stop()
         }
+        // eslint-disable-next-line no-console
         if (err) console.log(err.stack)
         if (options.exit) {
-            console.log('Server stopped')
             process.exit()
         }
     }
 
+    // noinspection JSUnusedGlobalSymbols
     /**
-     * Returns an oracle connection from the pool,
-     * sets the schema and switches the utilizer context
-     * @param req
-     * @returns {Promise.<oracledb.Connection>}
+     * Check the status of the server
+     * @returns {string} "on" if server is started, "off" if server is stopped
      */
-    async getConnection(req) {
-        if (!req.headers.hasOwnProperty(tokenHeader)) {
-            throw new Error('Unauthorized', 401)
-        }
-        const token = req.headers[tokenHeader]
-        const conn = await this.pool.getConnection()
-        await conn.execute(`alter session set CURRENT_SCHEMA = ${this.config.schema}`)
-        await conn.execute(
-            `begin
-              PKG_SESSION.VALIDATE_WEB(SCONNECT => :SCONNECT);
-            end;`, [token])
-        return conn
+    get status() {
+        return this._status
     }
 
     /**
-     * Creates an oracle connection pool
-     * @returns {Promise.<oracledb.Pool>}
-     * @private
+     * Add the api route
+     * @param {string} method The HTTP method or 'all'
+     * @param {string} path The api path (without «/api» prefix)
+     * @param {IRequestHandler} RequestHandler The route handler function
+     * @return {number} 0
      */
-    async _createPool() {
-        console.log('oracle connection pool created')
-        return await this.db.createPool({
-            user: this.config.user,
-            password: this.config.password,
-            connectString: this.config.connectString
-        })
+    addApi(method, path, RequestHandler) {
+        this._apiRouter[method.toLowerCase()](path, RequestHandler)
+        return 0
     }
-
     /**
-     * Generates the 48-byte token
-     * @returns {Promise.<string>}
+     * @callback IRequestHandler
+     * @param {IRequest} req The http request, see http://expressjs.com/en/4x/api.html#req
+     * @param {IResponse} res The http response see http://expressjs.com/en/4x/api.html#res
+     * @param {IRequestHandler} next The next handler function
      */
-    static async getNewToken() {
-        let t = await require('crypto').randomBytes(24)
-        return t.toString('hex')
-    }
 
-    /**
-     * Port/pipe normalizer
-     * @param val
-     * @returns {int|string}
-     */
-    static normalizePort(val) {
-        const port = parseInt(val, 10);
-        if (isNaN(port)) {
-            // named pipe
-            return val;
-        }
-        if (port >= 0) {
-            // port number
-            return port;
-        }
-        return false;
-    }
-
-    /** End user login.
-     * @param req
-     * @param res
-     * @param next
-     * @returns {Promise.<void>}
-     * @private
-     */
-    async _login(req, res, next) {
-        const inParams = req.body;
-        const conn = await this.pool.getConnection()
-        const token = await AfinaApiServer.getNewToken()
-        await conn.execute(`alter session set CURRENT_SCHEMA = ${this.config.schema}`)
-        const sql = `begin
-                   PKG_SESSION.LOGON_WEB(SCONNECT        => :SCONNECT,
-                                         SUTILIZER       => :SUTILIZER,
-                                         SPASSWORD       => :SPASSWORD,
-                                         SIMPLEMENTATION => :SAPPLICATION,
-                                         SAPPLICATION    => :SAPPLICATION,
-                                         SCOMPANY        => :SCOMPANY,
-                                         ${this.config.release >= 8 ? 'SBROWSER        => :SBROWSER' : ''},
-                                         SLANGUAGE       => :SLANGUAGE);
-                 end;`
-        let binds = {
-            "SCONNECT": token,
-            "SUTILIZER": inParams.username,
-            "SPASSWORD": inParams.password,
-            "SAPPLICATION": this.config.application,
-            "SCOMPANY": this.config.company,
-            "SLANGUAGE": this.config.language
-        }
-        if (this.config.release >= 8) binds["SBROWSER"] = req.header('user-agent')
-        try {
-            await conn.execute(sql, binds)
-            const ncompany = (await conn.execute(
-                `select PKG_SESSION.GET_COMPANY as NCOMPANY from dual`
-            )).rows[0]["NCOMPANY"]
-            res.header(tokenHeader, token)
-            res.status(200).json({
-                "ncompany": ncompany
-            })
-        }
-        catch (err) {
-            next(err)
-        }
-        finally {
-            conn.close()
-        }
-    }
-
-    /**
-     * End user logoff
-     * @param req
-     * @param res
-     * @param next
-     * @returns {Promise.<void>}
-     * @private
-     */
-    async _logoff(req, res, next) {
-        try {
-            const conn = await this.getConnection(req)
-            try {
-                await conn.execute(' begin PKG_SESSION.LOGOFF_WEB(SCONNECT => :SCONNECT); end;', [req.headers[tokenHeader]])
-                res.sendStatus(200)
-            }
-            finally {
-                conn.close()
-            }
-        }
-        catch (err) {
-            next(err)
-        }
-    }
-
-    get apiRouter() {
-        return this._apiRouter
-    }
 }
 
 module.exports = AfinaApiServer

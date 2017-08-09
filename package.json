@@ -1,24 +1,28 @@
 {
-  "name": "afina-rest-api",
-  "version": "1.0.1",
-  "description": "Rest api for Afina SQL",
-  "main": "index.js",
-  "author": "igor-go",
-  "repository": {
-    "url": "https://github.com/igorgo/afina-rest-api.git",
-    "type": "git"
-  },
-  "license": "MIT",
-  "dependencies": {
-    "body-parser": "^1.17.2",
-    "connect-sqlite3": "^0.9.9",
-    "cookie-parser": "^1.4.3",
-    "express": "^4.15.3",
-    "express-session": "^1.15.3",
-    "morgan": "^1.8.2",
-    "rotating-file-stream": "^1.2.2"
-  },
-  "files": [
-    "index.js"
-  ]
+    "name": "afina-rest-api",
+    "version": "1.0.2",
+    "description": "Rest api for Afina Sequel",
+    "main": "index.js",
+    "author": "Igor Gorodetskyy <igorgo16@gmail.com>",
+    "scripts": {
+        "test": "node test/test",
+        "doc": "documentation build index.js -f html -o docs",
+        "lint": "eslint index.js"
+    },
+    "repository": {
+        "url": "git+https://github.com/igorgo/afina-rest-api.git",
+        "type": "git"
+    },
+    "license": "LGPL-3.0",
+    "dependencies": {
+        "body-parser": "^1.17.2",
+        "cookie-parser": "^1.4.3",
+        "express": "^4.15.3",
+        "express-session": "^1.15.3",
+        "morgan": "^1.8.2",
+        "rotating-file-stream": "^1.2.2"
+    },
+    "files": [
+        "index.js"
+    ]
 }
