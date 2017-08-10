@@ -30,7 +30,6 @@ class AfinaApiServer {
         this._api = options.apiRoot || '/api'
         this._static = options.staticDest || ''
         this._express = express()
-        this._apiRouter = express.Router()
         this._express.use(bodyParser.json())
         this._express.use(bodyParser.urlencoded({extended: false}))
         this._express.use(cookieParser())
@@ -67,22 +66,33 @@ class AfinaApiServer {
                 path: this._log
             })
             this._express.use(logger(
-                `:req[${sessionIdHeader}] :res[${sessionIdHeader}] :date :method :url :status :res[content-length] - :response-time ms`,
+                `:req[${sessionIdHeader}] :res[${sessionIdHeader}] :remote-addr :date :method :url :status :res[content-length] - :response-time ms`,
                 {stream: accessLogStream}
             ))
         }
         this._express.set('port', this._port)
+        this._apiRouter = express.Router()
+        this._express.use(function (req, res, next) {
+            res.setHeader('X-Powered-By', 'Afina Sequel Api Server')
+            next()
+        })
         this._express.use(this._api, this._apiRouter)
+        this._express.use(function (req, res, next) {
+            let err = new Error('Not Found')
+            err.status = 404
+            next(err)
+        })
         this._express.use(function (err, req, res) {
-            // eslint-disable-next-line no-console
-            console.log(err.message)
-            if (err.message.startsWith('ORA-20103: Дальнейшая работа в Системе невозможна')) {
-                res.sendStatus(401)
-            } else {
-                res.locals.message = err.message
-                res.locals.error = req.app.get('env') === 'development' ? err : {}
-                res.status(err.status || 500)
-                res.send(err.message)
+            if (err && err.message) {
+                // eslint-disable-next-line no-console
+                if (err.message.startsWith('ORA-20103: Дальнейшая работа в Системе невозможна')) {
+                    res.sendStatus(401)
+                } else {
+                    res.locals.message = err.message
+                    res.locals.error = req.app.get('env') === 'development' ? err : {}
+                    res.status(err.status || 500)
+                    res.send(err.message)
+                }
             }
         })
         // set static content
@@ -115,13 +125,6 @@ class AfinaApiServer {
         this._server.on('listening', () => {
             this._status = 'on'
         })
-        process.stdin.resume() //so the program will not close instantly
-        //catches closing app
-        process.on('exit', await this._exitHandler.bind(this, {cleanup: true}))
-        //catches ctrl+c event
-        process.on('SIGINT', await this._exitHandler.bind(this, {exit: true, cleanup: true}))
-        //catches uncaught exceptions
-        process.on('uncaughtException',await   this._exitHandler.bind(this, {exit: true, cleanup: true}))
         await this._listen()
         return this
     }
